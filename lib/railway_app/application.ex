@@ -57,8 +57,10 @@ defmodule RailwayApp.Application do
   end
 
   defp validate_environment! do
+    env = Application.get_env(:railway_app, :env, :dev)
+
     # In production, validate critical environment variables
-    if Application.get_env(:railway_app, :env) == :prod do
+    if env == :prod do
       database_url = System.get_env("DATABASE_URL")
       secret_key_base = System.get_env("SECRET_KEY_BASE")
       railway_api_token = System.get_env("RAILWAY_API_TOKEN")
@@ -108,13 +110,13 @@ defmodule RailwayApp.Application do
         Logger.info("This app will monitor external services specified above")
       end
 
-      # Log warning for missing Slack integration (but don't fail startup)
-      if !(System.get_env("SLACK_BOT_TOKEN") && System.get_env("SLACK_SIGNING_SECRET") &&
-             System.get_env("SLACK_CHANNEL_ID")) do
-        Logger.warning(
-          "Slack integration variables not configured. Slack features will be disabled.",
-          %{}
-        )
+      # Slack integration is required (all must be non-empty)
+      slack_token = System.get_env("SLACK_BOT_TOKEN")
+      slack_secret = System.get_env("SLACK_SIGNING_SECRET")
+      slack_channel = System.get_env("SLACK_CHANNEL_ID")
+
+      if !present?(slack_token) or !present?(slack_secret) or !present?(slack_channel) do
+        raise "Slack environment variables are required in production: SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, SLACK_CHANNEL_ID"
       end
 
       # Log warning for missing LLM provider (but don't fail startup)
@@ -122,6 +124,10 @@ defmodule RailwayApp.Application do
         Logger.warning("No LLM provider configured. AI features will be disabled.", %{})
       end
     end
+  end
+
+  defp present?(value) do
+    is_binary(value) and String.trim(value) != ""
   end
 
   # Tell Phoenix to update the endpoint configuration

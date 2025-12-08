@@ -14,55 +14,45 @@ This template provides a comprehensive incident response and log analysis system
 
 To use this template, you must configure the following environment variables:
 
-### 🚀 Core (required to boot)
+### 🚀 Core (must be set by user)
 
 - `SECRET_KEY_BASE`: Phoenix secret (generate with `mix phx.gen.secret`)
 - `RAILWAY_API_TOKEN`: Railway API token (Dashboard → Account → API Tokens)
 - `OPENAI_API_KEY`: OpenAI API key (app will not start without it)
 
-### 🔔 Slack notifications (required for Slack features)
+### 🔔 Slack (required)
 
 - `SLACK_BOT_TOKEN`: Bot token (starts with `xoxb-`; scopes `chat:write`, `channels:read`, `users:read`)
 - `SLACK_SIGNING_SECRET`: Signing secret from Slack app → Basic Information
 - `SLACK_CHANNEL_ID`: Channel ID (starts with `C` or `G`)
 
-### 🗄️ Database & auto-provided values (no action needed)
+### 🗄️ Auto-provided by Railway (no action)
 
-- `DATABASE_URL`: Auto-provided by the bundled Railway Postgres service (override only if using external DB)
+- `DATABASE_URL`: From the bundled Postgres service (ensure the Postgres addon is attached)
 - Railway injects: `PORT`, `RAILWAY_PUBLIC_DOMAIN` (used as `PHX_HOST` fallback), `RAILWAY_PROJECT_ID`, `RAILWAY_ENVIRONMENT_ID`, `RAILWAY_ENVIRONMENT`, `RAILWAY_SERVICE_ID`, `RAILWAY_SERVICE_NAME`, `RAILWAY_PROJECT_NAME`, `RAILWAY_ENVIRONMENT_NAME`, `RAILWAY_PRIVATE_DOMAIN`, `RAILWAY_STATIC_URL`, `RAILWAY_SERVICE_RAILWAY_TEMPLATE_URL`
-- `PHX_HOST` (optional; defaults to `RAILWAY_PUBLIC_DOMAIN`)
-- `PHX_SERVER` defaults to true in prod via the release
-- `DNS_CLUSTER_QUERY` (optional; only if clustering multiple instances)
+- `PHX_SERVER` defaulted to true in the template; `MIX_ENV` defaulted to `prod`
+- `PHX_HOST` is optional (code falls back to `RAILWAY_PUBLIC_DOMAIN`)
+- `DNS_CLUSTER_QUERY` is optional (only set if clustering multiple instances)
 
-### 📡 Monitoring targets (optional, recommended)
+### 📡 Monitoring targets (optional)
 
 - `RAILWAY_MONITORED_PROJECTS`: Comma-separated Railway project IDs
 - `RAILWAY_MONITORED_ENVIRONMENTS`: Comma-separated environment IDs (defaults to `production` if blank)
 - `RAILWAY_MONITORED_SERVICES`: Comma-separated service IDs (optional; pairs with the projects/environments above)
 
-### 🤖 LLM provider options
+### 🤖 LLM provider options (optional)
 
 - `LLM_DEFAULT_PROVIDER`: `openai` or `anthropic` (default: `openai`)
 - `ANTHROPIC_API_KEY`: Claude API key (optional)
 
-### ⚙️ Performance and connection tuning (optional; defaults shown)
+### ⚙️ Advanced tuning (optional; code has sane defaults)
 
-- `RAILWAY_CONNECTION_TIMEOUT` (ms, default `30000`)
-- `RAILWAY_MAX_RETRY_ATTEMPTS` (default `10`)
-- `RAILWAY_MAX_BACKOFF` (ms, default `60000`)
-- `RAILWAY_HEARTBEAT_INTERVAL` (ms, default `30000`)
-- `RAILWAY_HEARTBEAT_TIMEOUT` (ms, default `45000`)
-- `RAILWAY_POLLING_INTERVAL` (seconds, default `30`)
-- `RAILWAY_BATCH_MIN_SIZE` (default `10`)
-- `RAILWAY_BATCH_MAX_SIZE` (default `1000`)
-- `RAILWAY_BATCH_WINDOW_MIN` (seconds, default `5`)
-- `RAILWAY_BATCH_WINDOW_MAX` (seconds, default `300`)
-- `RAILWAY_BUFFER_RETENTION` (hours, default `24`)
-- `RAILWAY_MEMORY_LIMIT` (MB, default `512`)
-- `RAILWAY_RATE_LIMIT_HR` (default `10000`)
-- `RAILWAY_RATE_LIMIT_SEC` (default `50`)
-- `RAILWAY_GRAPHQL_ENDPOINT` (default `https://backboard.railway.app/graphql/v2`)
-- `RAILWAY_WS_ENDPOINT` (default `wss://backboard.railway.app/graphql/v2`)
+If you need overrides, you can still set:
+`RAILWAY_POLLING_INTERVAL`, `RAILWAY_MAX_RETRY_ATTEMPTS`, `RAILWAY_MAX_BACKOFF`,
+`RAILWAY_HEARTBEAT_INTERVAL`, `RAILWAY_HEARTBEAT_TIMEOUT`, `RAILWAY_RATE_LIMIT_HR`,
+`RAILWAY_RATE_LIMIT_SEC`, `RAILWAY_BATCH_MIN_SIZE`, `RAILWAY_BATCH_MAX_SIZE`,
+`RAILWAY_BATCH_WINDOW_MIN`, `RAILWAY_BATCH_WINDOW_MAX`, `RAILWAY_BUFFER_RETENTION`,
+`RAILWAY_MEMORY_LIMIT`, `RAILWAY_GRAPHQL_ENDPOINT`, `RAILWAY_WS_ENDPOINT`
 
 ## Setup Instructions
 

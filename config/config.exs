@@ -9,7 +9,8 @@ import Config
 
 config :railway_app,
   ecto_repos: [RailwayApp.Repo],
-  generators: [timestamp_type: :utc_datetime]
+  generators: [timestamp_type: :utc_datetime],
+  env: config_env()
 
 # Configures the endpoint
 config :railway_app, RailwayAppWeb.Endpoint,
