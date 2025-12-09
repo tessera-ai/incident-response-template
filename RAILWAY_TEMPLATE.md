@@ -117,7 +117,6 @@ Add all required environment variables to your Railway service:
 
 ```bash
 # Required
-SECRET_KEY_BASE=$(mix phx.gen.secret)
 RAILWAY_API_TOKEN=your_railway_api_token
 OPENAI_API_KEY=your_openai_api_key
 SLACK_BOT_TOKEN=xoxb-your-slack-bot-token

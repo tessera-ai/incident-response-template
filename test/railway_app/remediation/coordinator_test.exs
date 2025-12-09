@@ -38,7 +38,7 @@ defmodule RailwayApp.Remediation.CoordinatorTest do
   describe "auto-remediation" do
     test "executes remediation for high-confidence incidents", %{
       incident: incident,
-      service_config: service_config
+      service_config: _service_config
     } do
       # Trigger auto-remediation
       Coordinator.execute_remediation(incident.id, "automated", "system")

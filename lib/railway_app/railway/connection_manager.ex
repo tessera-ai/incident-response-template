@@ -358,20 +358,8 @@ defmodule RailwayApp.Railway.ConnectionManager do
     endpoint =
       Map.get(config, :websocket_endpoint, RailwayApp.Railway.ServiceConfig.websocket_endpoint())
 
-    # Use environment_id for environmentLogs subscription
-    # This automatically includes logs from all deployments (including new ones)
+    # Use environment_id for environmentLogs subscription (covers all deployments)
     environment_id = Map.get(config, :environment_id)
-
-    if environment_id do
-      Logger.info(
-        "Using environment_id #{environment_id} for service #{service_id} (will receive logs from all deployments)"
-      )
-    else
-      Logger.warning(
-        "No environment_id configured for service #{service_id}. Log subscription may not work.",
-        %{}
-      )
-    end
 
     case RailwayApp.Railway.WebSocketSupervisor.start_service_connection(
            project_id,
@@ -385,38 +373,22 @@ defmodule RailwayApp.Railway.ConnectionManager do
           "WebSocket connection established - project_id: #{project_id}, service_id: #{service_id}, environment_id: #{environment_id}"
         )
 
-        # Subscribe to logs if auto-subscribe is enabled
-        # We need to get the deployment_id first since Railway only supports deploymentLogs subscription
-        deployment_id =
-          if Map.get(config, :auto_subscribe, true) && environment_id do
-            case RailwayApp.Railway.Client.get_latest_deployment_id(
-                   project_id,
-                   environment_id,
-                   service_id
-                 ) do
-              {:ok, dep_id} ->
-                Logger.info("Found latest deployment #{dep_id} for service #{service_id}")
-                RailwayApp.Railway.WebSocketClient.subscribe_to_logs(pid, dep_id, %{})
-                dep_id
-
-              {:error, reason} ->
-                Logger.warning(
-                  "Could not find deployment for service #{service_id}: #{inspect(reason)}. Log streaming will not work until a deployment is available.",
-                  %{}
-                )
-
-                nil
-            end
-          else
-            nil
-          end
+        # Subscribe to environment logs if auto-subscribe is enabled
+        if Map.get(config, :auto_subscribe, true) && environment_id do
+          Logger.info("Subscribing to environment logs for env #{environment_id}")
+          RailwayApp.Railway.WebSocketClient.subscribe_to_logs(pid, environment_id, %{})
+        else
+          Logger.warning(
+            "No environment_id configured for service #{service_id}. Log subscription may not work.",
+            %{}
+          )
+        end
 
         connection_info = %{
           pid: pid,
           project_id: project_id,
           service_id: service_id,
           environment_id: environment_id,
-          deployment_id: deployment_id,
           started_at: DateTime.utc_now(),
           last_activity: DateTime.utc_now(),
           config: config

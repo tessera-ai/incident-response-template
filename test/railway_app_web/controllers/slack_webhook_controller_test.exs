@@ -1,8 +1,6 @@
 defmodule RailwayAppWeb.SlackWebhookControllerTest do
   use RailwayAppWeb.ConnCase, async: false
 
-  alias RailwayApp.Incident
-
   setup do
     # Store and restore original configs
     original_slack = Application.get_env(:railway_app, :slack, [])

@@ -2,7 +2,7 @@
   "version": "1.0",
   "name": "Tessera AI Incident Response Agent",
   "description": "AI-powered incident response system that monitors Railway services and provides intelligent Slack notifications with remediation suggestions",
-  "icon": "🚨",
+  "icon": "https://tessera.help/logo.svg",
   "tags": ["monitoring", "incident-response", "slack", "ai", "logs", "alerts"],
   "type": "elixir",
   "build": {
@@ -35,7 +35,7 @@
       "PHX_SERVER": "${PHX_SERVER:true}",
       "MIX_ENV": "${MIX_ENV:prod}",
       "DATABASE_URL": "${DATABASE_URL}",
-      "SECRET_KEY_BASE": "${SECRET_KEY_BASE}",
+      "SECRET_KEY_BASE": "${{secret(64, \"abcdef0123456789\")}}",
       "RAILWAY_API_TOKEN": "${RAILWAY_API_TOKEN}",
       "OPENAI_API_KEY": "${OPENAI_API_KEY}",
       "SLACK_BOT_TOKEN": "${SLACK_BOT_TOKEN}",

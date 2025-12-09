@@ -49,3 +49,5 @@ node_modules
 .specify/
 # macOS
 .DS_Store
+scripts/graphql-schema
+.cursor/

@@ -34,7 +34,7 @@ For the full, authoritative variable list (required, optional, defaults), see `R
 1. Go to [Railway Dashboard → API Tokens](https://railway.app/account/tokens)
 2. Click **"Create New Token"**
 3. Give it a name (e.g., "Incident Response System")
-4. Copy the token - it starts with `prod_...`
+4. Copy the token
 5. Add it as `RAILWAY_API_TOKEN` in your Railway variables
 
 > **Required permissions**: Read access to projects you want to monitor
@@ -161,7 +161,7 @@ Use the `/tessera` command (or your configured command) in Slack:
 
 ### Dashboard
 
-Access the dashboard at `https://your-app.railway.app/dashboard` to:
+Access the dashboard at `https://your-app.railway.app` to:
 
 - View recent incidents and their status
 - Toggle auto-remediation per service

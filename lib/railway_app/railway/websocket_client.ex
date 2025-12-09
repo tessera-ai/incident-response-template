@@ -8,6 +8,7 @@ defmodule RailwayApp.Railway.WebSocketClient do
   use WebSockex
   require Logger
 
+  @default_log_filter "severity:error"
   @reconnect_interval 5_000
   @max_backoff 60_000
 
@@ -101,11 +102,12 @@ defmodule RailwayApp.Railway.WebSocketClient do
   end
 
   @doc """
-  Subscribe to deployment logs. Requires a deployment_id (not environment_id).
-  Railway's GraphQL API only supports deploymentLogs subscription.
+  Subscribe to environment logs (preferred over deploymentLogs).
+  Accepts optional `:filter` (string) to let the server filter logs, defaulting
+  to only `severity:error` for efficiency.
   """
-  def subscribe_to_logs(pid, deployment_id, opts \\ []) do
-    WebSockex.cast(pid, {:subscribe, deployment_id, opts})
+  def subscribe_to_logs(pid, environment_id, opts \\ []) do
+    WebSockex.cast(pid, {:subscribe, environment_id, normalize_opts(opts)})
   end
 
   def unsubscribe_from_logs(pid, subscription_id) do
@@ -222,6 +224,8 @@ defmodule RailwayApp.Railway.WebSocketClient do
 
   @impl true
   def handle_cast({:subscribe, environment_id, opts}, state) do
+    opts = normalize_opts(opts)
+
     # Queue subscription if connection not yet acknowledged
     if not state.connection_acknowledged do
       Logger.info("Connection not yet acknowledged, queueing subscription for #{environment_id}")
@@ -233,7 +237,7 @@ defmodule RailwayApp.Railway.WebSocketClient do
 
       {:ok, new_state}
     else
-      do_subscribe(environment_id, state)
+      do_subscribe(environment_id, state, opts)
     end
   end
 
@@ -419,16 +423,15 @@ defmodule RailwayApp.Railway.WebSocketClient do
 
   # Private Functions
 
-  defp do_subscribe(deployment_id, state) do
+  defp do_subscribe(environment_id, state, opts) do
     subscription_id = "sub_#{state.subscription_counter}"
     new_counter = state.subscription_counter + 1
 
-    # GraphQL subscription for Railway deployment logs
-    # Note: Railway only supports deploymentLogs subscription, not environmentLogs
-    # The caller should provide a deployment_id, not environment_id
+    # GraphQL subscription for Railway environment logs
+    # This covers all deployments within the environment
     subscription_query = """
-    subscription DeploymentLogs($deploymentId: String!, $filter: String, $limit: Int) {
-      deploymentLogs(deploymentId: $deploymentId, filter: $filter, limit: $limit) {
+    subscription EnvironmentLogs($environmentId: String!, $filter: String) {
+      environmentLogs(environmentId: $environmentId, filter: $filter) {
         message
         timestamp
         severity
@@ -436,10 +439,17 @@ defmodule RailwayApp.Railway.WebSocketClient do
     }
     """
 
+    filter =
+      opts
+      |> Map.get(:filter)
+      |> case do
+        nil -> Map.get(opts, "filter", @default_log_filter)
+        value -> value
+      end
+
     variables = %{
-      "deploymentId" => deployment_id,
-      "filter" => "",
-      "limit" => 100
+      "environmentId" => environment_id,
+      "filter" => filter
     }
 
     # graphql-transport-ws protocol (newer) uses "subscribe"
@@ -459,7 +469,7 @@ defmodule RailwayApp.Railway.WebSocketClient do
       | subscription_counter: new_counter,
         subscriptions:
           Map.put(state.subscriptions, subscription_id, %{
-            deployment_id: deployment_id,
+            environment_id: environment_id,
             query: subscription_query,
             variables: variables,
             started_at: DateTime.utc_now()
@@ -467,7 +477,7 @@ defmodule RailwayApp.Railway.WebSocketClient do
     }
 
     Logger.info(
-      "Sending subscription request for deployment #{deployment_id} (sub: #{subscription_id})"
+      "Sending subscription request for environment #{environment_id} (sub: #{subscription_id})"
     )
 
     {:reply, frame, new_state}
@@ -510,7 +520,8 @@ defmodule RailwayApp.Railway.WebSocketClient do
     {:ok, state}
   end
 
-  defp handle_log_data(payload, state) do
+  @doc false
+  def handle_log_data(payload, state) do
     # Handle both environmentLogs and deploymentLogs responses
     logs =
       case payload do
@@ -588,6 +599,10 @@ defmodule RailwayApp.Railway.WebSocketClient do
 
     {:ok, state}
   end
+
+  defp normalize_opts(%{} = opts), do: opts
+  defp normalize_opts(opts) when is_list(opts), do: Map.new(opts)
+  defp normalize_opts(_), do: %{}
 
   defp parse_timestamp(nil), do: DateTime.utc_now()
 
