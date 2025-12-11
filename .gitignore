@@ -47,6 +47,7 @@ node_modules
 .cursor/
 .claude/
 .specify/
+specs/
 CLAUDE.md
 AGENTS.md
 

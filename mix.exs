@@ -11,7 +11,6 @@ defmodule RailwayApp.MixProject do
       aliases: aliases(),
       deps: deps(),
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
-      listeners: [Phoenix.CodeReloader],
       releases: [
         railway_app: [
           include_executables_for: [:unix],
@@ -104,7 +103,14 @@ defmodule RailwayApp.MixProject do
         "deps.unlock --unused",
         "format --check-formatted",
         "test.unit"
-      ]
+      ],
+      dev: ["phx.server"],
+      "dev.deps": ["deps.get", "deps.compile", "cmd npm install --prefix assets"],
+      "db.create": ["ecto.create"],
+      "db.migrate": ["ecto.migrate"],
+      "db.reset": ["ecto.drop", "ecto.create", "ecto.migrate"],
+      "db.seed": ["run priv/repo/seeds.exs"],
+      "build.release": ["cmd MIX_ENV=prod mix release"]
     ]
   end
 

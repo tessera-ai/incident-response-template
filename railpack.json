@@ -1,30 +1,3 @@
 {
-  "$schema": "https://schema.railpack.com",
-  "language": "elixir",
-  "build": {
-    "elixir": "1.19.2",
-    "erlang": "28"
-  },
-  "buildAptPackages": ["git", "curl", "build-essential", "npm"],
-  "caches": {
-    "hex-deps": { "directory": "/root/.hex", "type": "shared" },
-    "mix-deps": { "directory": "/root/.cache/mix", "type": "shared" },
-    "build-cache": { "directory": "/app/_build", "type": "shared" }
-  },
-  "steps": {
-    "install": {
-      "commands": [
-        "mix local.hex --force",
-        "mix local.rebar --force",
-        "mix deps.get --only prod",
-        "npm install"
-      ]
-    },
-    "build": {
-      "commands": ["npm run build", "mix assets.deploy", "mix release"]
-    }
-  },
-  "deploy": {
-    "startCommand": "/app/_build/prod/rel/railway_app/bin/railway_app eval 'RailwayApp.Release.migrate' && /app/_build/prod/rel/railway_app/bin/railway_app start"
-  }
+  "$schema": "https://schema.railpack.com"
 }
