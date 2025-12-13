@@ -448,7 +448,9 @@ defmodule RailwayApp.Railway.WebSocketClient do
             nil -> @default_log_filter
             value -> value
           end
-        value -> value
+
+        value ->
+          value
       end
 
     variables = %{

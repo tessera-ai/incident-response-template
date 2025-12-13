@@ -142,14 +142,17 @@ defmodule RailwayApp.Conversations do
 
   defp normalize_int(value, default) do
     cond do
-      is_integer(value) -> value
+      is_integer(value) ->
+        value
+
       is_binary(value) ->
         case Integer.parse(value) do
           {int, _} -> int
           :error -> default
         end
 
-      true -> default
+      true ->
+        default
     end
   end
 end
