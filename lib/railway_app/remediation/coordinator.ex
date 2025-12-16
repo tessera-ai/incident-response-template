@@ -5,11 +5,12 @@ defmodule RailwayApp.Remediation.Coordinator do
   """
 
   use GenServer
-  require Logger
 
-  alias RailwayApp.{Incidents, ServiceConfigs, RemediationActions}
-  alias RailwayApp.Railway.Client
   alias RailwayApp.Alerts.SlackNotifier
+  alias RailwayApp.Railway.Client
+  alias RailwayApp.{Incidents, RemediationActions, ServiceConfigs}
+
+  require Logger
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)

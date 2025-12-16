@@ -5,9 +5,10 @@ defmodule RailwayApp.Analysis.LogProcessor do
   """
 
   use GenServer
-  require Logger
 
   alias RailwayApp.Analysis.LLMRouter
+
+  require Logger
 
   @window_size 20
   @batch_interval 5_000
@@ -173,8 +174,16 @@ defmodule RailwayApp.Analysis.LogProcessor do
       logs
       |> List.first()
       |> case do
-        %{environment_id: env_id} when is_binary(env_id) -> env_id
-        _ -> System.get_env("RAILWAY_MONITORED_ENVIRONMENTS")
+        %{environment_id: env_id} when is_binary(env_id) ->
+          env_id
+
+        _ ->
+          # Use first monitored environment as default
+          "RAILWAY_MONITORED_ENVIRONMENTS"
+          |> System.get_env("")
+          |> String.split(",")
+          |> List.first()
+          |> String.trim()
       end
 
     attrs = %{
@@ -301,8 +310,9 @@ defmodule RailwayApp.Analysis.LogProcessor do
     if test_env?(), do: nil, else: service_config.id
   end
 
+  @compile_env Mix.env()
   defp test_env? do
-    Mix.env() == :test
+    @compile_env == :test
   end
 
   defp schedule_batch_analysis do
