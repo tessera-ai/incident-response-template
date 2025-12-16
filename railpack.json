@@ -1,17 +1,5 @@
 {
   "$schema": "https://schema.railpack.com",
-  "steps": {
-    "build": {
-      "commands": [
-        "mix deps.get --only prod",
-        "mix deps.compile",
-        "mix assets.setup",
-        "mix compile",
-        "mix assets.deploy",
-        "mix release"
-      ]
-    }
-  },
   "deploy": {
     "startCommand": "/app/_build/prod/rel/railway_app/bin/railway_app eval 'RailwayApp.Release.migrate()' && /app/_build/prod/rel/railway_app/bin/railway_app start"
   }
