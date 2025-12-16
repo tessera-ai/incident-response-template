@@ -3,10 +3,6 @@ defmodule RailwayAppWeb.SlackWebhookController do
 
   require Logger
 
-  alias RailwayApp.Incidents
-  alias RailwayApp.Analysis.LLMRouter
-  alias RailwayApp.Alerts.SlackNotifier
-
   @moduledoc """
   Handles incoming Slack webhook events (interactive actions and slash commands).
   """
@@ -124,191 +120,13 @@ defmodule RailwayAppWeb.SlackWebhookController do
 
     Enum.each(actions, fn action ->
       case action["action_id"] do
-        "auto_fix" ->
-          handle_auto_fix(action["value"], payload)
-
-        "confirm_auto_fix" ->
-          handle_confirm_auto_fix(action["value"], payload)
-
-        "cancel_auto_fix" ->
-          handle_cancel_auto_fix(action["value"], payload)
-
         "start_chat" ->
           handle_start_chat(action["value"], payload)
-
-        "ignore" ->
-          handle_ignore(action["value"], payload)
 
         _ ->
           Logger.warning("Unknown action: #{action["action_id"]}", %{})
       end
     end)
-  end
-
-  defp handle_auto_fix(value, payload) do
-    case parse_action_value(value) do
-      {:ok, incident_id} ->
-        Logger.info("Auto-fix requested for incident #{incident_id}")
-
-        channel_id = get_in(payload, ["channel", "id"])
-        thread_ts = get_in(payload, ["message", "ts"])
-
-        # Run AI analysis in background task
-        Task.Supervisor.start_child(RailwayApp.TaskSupervisor, fn ->
-          process_auto_fix_with_ai(incident_id, channel_id, thread_ts)
-        end)
-
-      {:error, _} ->
-        Logger.error("Invalid action value: #{value}")
-    end
-  end
-
-  defp process_auto_fix_with_ai(incident_id, channel_id, thread_ts) do
-    case Incidents.get_incident(incident_id) do
-      nil ->
-        Logger.error("Incident not found: #{incident_id}")
-        SlackNotifier.send_message(channel_id, "❌ Incident not found.", thread_ts)
-
-      incident ->
-        # Send "analyzing" message
-        SlackNotifier.send_message(
-          channel_id,
-          "🔍 Analyzing incident and generating AI recommendation...",
-          thread_ts
-        )
-
-        # Get recent logs for context
-        recent_logs = get_recent_logs_for_incident(incident)
-
-        # Get AI recommendation
-        case LLMRouter.get_remediation_recommendation(incident, recent_logs) do
-          {:ok, recommendation} ->
-            Logger.info(
-              "AI recommendation for incident #{incident_id}: #{inspect(recommendation)}"
-            )
-
-            # Send recommendation message with Confirm/Cancel buttons
-            SlackNotifier.send_recommendation_message(
-              channel_id,
-              incident,
-              recommendation,
-              thread_ts
-            )
-
-          {:error, reason} ->
-            Logger.error("Failed to get AI recommendation: #{inspect(reason)}")
-
-            # Fall back to the existing recommended action
-            SlackNotifier.send_message(
-              channel_id,
-              "⚠️ Could not get AI recommendation. Falling back to default action: *#{incident.recommended_action}*\n\nWould you like to proceed?",
-              thread_ts
-            )
-
-            # Send fallback recommendation with buttons
-            SlackNotifier.send_fallback_recommendation_message(
-              channel_id,
-              incident,
-              thread_ts
-            )
-        end
-    end
-  end
-
-  defp get_recent_logs_for_incident(incident) do
-    # Try to get recent logs from Railway API
-    config = Application.get_env(:railway_app, :railway, [])
-    project_id = config[:project_id]
-    environment_id = incident.environment_id
-
-    if project_id && environment_id && incident.service_id do
-      case RailwayApp.Railway.Client.get_latest_deployment_id(
-             project_id,
-             environment_id,
-             incident.service_id
-           ) do
-        {:ok, deployment_id} ->
-          case RailwayApp.Railway.Client.get_deployment_logs(deployment_id, limit: 50) do
-            {:ok, %{"deploymentLogs" => logs}} when is_list(logs) ->
-              Enum.map(logs, fn log ->
-                %{
-                  timestamp: log["timestamp"],
-                  level: log["severity"] || "info",
-                  message: log["message"]
-                }
-              end)
-
-            _ ->
-              []
-          end
-
-        _ ->
-          []
-      end
-    else
-      []
-    end
-  rescue
-    # If anything fails, return empty list
-    _ -> []
-  end
-
-  defp handle_confirm_auto_fix(value, payload) do
-    case parse_confirm_value(value) do
-      {:ok, incident_id, action} ->
-        Logger.info("Confirmed auto-fix for incident #{incident_id}: #{action}")
-
-        channel_id = get_in(payload, ["channel", "id"])
-        thread_ts = get_in(payload, ["message", "ts"])
-
-        # Send confirmation message
-        SlackNotifier.send_message(
-          channel_id,
-          "✅ Executing *#{format_action_name(action)}*...",
-          thread_ts
-        )
-
-        # Update incident with the confirmed action and execute
-        case Incidents.get_incident(incident_id) do
-          nil ->
-            Logger.error("Incident not found: #{incident_id}")
-
-          incident ->
-            # Update recommended action if different
-            if incident.recommended_action != action do
-              Incidents.update_incident(incident, %{recommended_action: action})
-            end
-
-            # Broadcast to remediation coordinator
-            Phoenix.PubSub.broadcast(
-              RailwayApp.PubSub,
-              "remediation:actions",
-              {:auto_fix_requested, incident_id, "user"}
-            )
-        end
-
-      {:error, _} ->
-        Logger.error("Invalid confirm action value: #{value}")
-    end
-  end
-
-  defp handle_cancel_auto_fix(value, payload) do
-    case parse_action_value(value) do
-      {:ok, incident_id} ->
-        Logger.info("Cancelled auto-fix for incident #{incident_id}")
-
-        channel_id = get_in(payload, ["channel", "id"])
-        thread_ts = get_in(payload, ["message", "ts"])
-
-        SlackNotifier.send_message(
-          channel_id,
-          "🚫 Auto-fix cancelled. Use *Start Chat* to discuss alternative actions.",
-          thread_ts
-        )
-
-      {:error, _} ->
-        Logger.error("Invalid cancel action value: #{value}")
-    end
   end
 
   defp handle_start_chat(value, payload) do
@@ -326,43 +144,6 @@ defmodule RailwayAppWeb.SlackWebhookController do
           "conversations:events",
           {:start_chat, incident_id, channel_id, user_id, message_ts}
         )
-
-      {:error, _} ->
-        Logger.error("Invalid action value: #{value}")
-    end
-  end
-
-  defp handle_ignore(value, payload) do
-    case parse_action_value(value) do
-      {:ok, incident_id} ->
-        Logger.info("Ignore requested for incident #{incident_id}")
-
-        channel_id = get_in(payload, ["channel", "id"])
-        thread_ts = get_in(payload, ["message", "ts"])
-
-        # Mark incident as ignored (soft delete)
-        case Incidents.get_incident(incident_id) do
-          nil ->
-            Logger.error("Incident not found: #{incident_id}")
-            SlackNotifier.send_message(channel_id, "❌ Incident not found.", thread_ts)
-
-          incident ->
-            # Update status to "ignored" instead of deleting
-            case Incidents.update_incident(incident, %{
-                   status: "ignored",
-                   resolved_at: DateTime.utc_now()
-                 }) do
-              {:ok, updated_incident} ->
-                Logger.info("Incident #{incident_id} marked as ignored")
-
-                # Send confirmation message with incident summary
-                SlackNotifier.send_ignore_confirmation(channel_id, updated_incident, thread_ts)
-
-              {:error, reason} ->
-                Logger.error("Failed to ignore incident #{incident_id}: #{inspect(reason)}")
-                SlackNotifier.send_message(channel_id, "❌ Failed to ignore incident.", thread_ts)
-            end
-        end
 
       {:error, _} ->
         Logger.error("Invalid action value: #{value}")
@@ -390,27 +171,6 @@ defmodule RailwayAppWeb.SlackWebhookController do
     case String.split(value, ":") do
       [_action, id] -> {:ok, id}
       _ -> {:error, :invalid_format}
-    end
-  end
-
-  defp parse_confirm_value(value) do
-    # Format: "confirm:incident_id:action"
-    case String.split(value, ":") do
-      [_confirm, incident_id, action] -> {:ok, incident_id, action}
-      _ -> {:error, :invalid_format}
-    end
-  end
-
-  defp format_action_name(action) do
-    case action do
-      "restart" -> "Restart Service"
-      "redeploy" -> "Redeploy Service"
-      "scale_memory" -> "Scale Memory"
-      "scale_replicas" -> "Scale Replicas"
-      "rollback" -> "Rollback Deployment"
-      "stop" -> "Stop Service"
-      "manual_fix" -> "Manual Intervention"
-      _ -> action
     end
   end
 end

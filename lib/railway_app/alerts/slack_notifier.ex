@@ -285,7 +285,7 @@ defmodule RailwayApp.Alerts.SlackNotifier do
         type: "section",
         text: %{
           type: "mrkdwn",
-          text: "*What would you like to do?*"
+          text: "*Need to discuss this incident?*"
         }
       },
       %{
@@ -293,23 +293,10 @@ defmodule RailwayApp.Alerts.SlackNotifier do
         elements: [
           %{
             type: "button",
-            text: %{type: "plain_text", text: "Auto Fix"},
-            style: "primary",
-            action_id: "auto_fix",
-            value: "auto_fix:#{incident.id}"
-          },
-          %{
-            type: "button",
             text: %{type: "plain_text", text: "Start Chat"},
+            style: "primary",
             action_id: "start_chat",
             value: "start_chat:#{incident.id}"
-          },
-          %{
-            type: "button",
-            text: %{type: "plain_text", text: "Ignore"},
-            style: "danger",
-            action_id: "ignore",
-            value: "ignore:#{incident.id}"
           }
         ]
       }
