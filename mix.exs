@@ -14,14 +14,7 @@ defmodule RailwayApp.MixProject do
       releases: [
         railway_app: [
           include_executables_for: [:unix],
-          applications: [runtime_tools: :permanent],
-
-          # Add Ecto migration support for Railpack
-          steps: [:assemble, &EctoSQL.Store.put_migration_repo/1, :tar]
-
-          # Optional: Run migrations at runtime after application starts
-          # Uncomment if you prefer runtime migrations instead of build-time
-          # post_start_hooks: [&EctoSQL.Store.post_start_hook/1]
+          applications: [runtime_tools: :permanent]
         ]
       ]
     ]
