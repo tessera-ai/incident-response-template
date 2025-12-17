@@ -304,14 +304,14 @@ defmodule RailwayApp.Conversations.ConversationManager do
             "To rollback a deployment, please specify which service."
           end
 
-        String.contains?(message_lower, "logs") ->
+        String.contains?(message_lower, ["logs", "log"]) ->
           if service_id do
             execute_command({:logs, value || 20}, service_id, session)
           else
             "To view logs, please specify which service."
           end
 
-        String.contains?(message_lower, "deployments") ->
+        String.contains?(message_lower, ["deployments", "deployment"]) ->
           if service_id do
             execute_command({:deployments, value || 5}, service_id, session)
           else

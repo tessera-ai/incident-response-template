@@ -50,14 +50,17 @@ defmodule RailwayApp.Remediation.Coordinator do
         Logger.warning("No service config found for #{incident.service_id}", %{})
 
       service_config ->
-        if service_config.auto_remediation_enabled && incident.recommended_action != "manual_fix" do
-          Logger.info("Auto-remediation enabled for incident #{incident.id}")
-          execute_remediation_action(incident, "automated", "system")
-        else
+        # FORCE DISABLE: Auto-remediation is strictly disabled for safety.
+        # Even if config says true, we ignore it to ensure human confirmation.
+        if service_config.auto_remediation_enabled do
           Logger.info(
-            "Auto-remediation disabled or manual fix required for incident #{incident.id}"
+            "Auto-remediation configured as enabled for incident #{incident.id}, but BLOCKED by safety policy. Manual fix required."
           )
         end
+
+        Logger.info(
+          "Auto-remediation disabled or manual fix required for incident #{incident.id}"
+        )
     end
 
     {:noreply, state}

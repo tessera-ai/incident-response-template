@@ -35,32 +35,13 @@ defmodule RailwayApp.Alerts.SlackNotifier do
     end
   end
 
-  @doc """
-  Sends a remediation update to Slack.
-  """
   def send_remediation_update(incident, action, status) do
-    config = Application.get_env(:railway_app, :slack, [])
-    token = config[:bot_token]
-    channel_id = config[:channel_id]
+    # User requested to disable this message entirely
+    Logger.info(
+      "[Slack] REMEDIATION UPDATE (suppressed): incident_id=#{incident.id} action=#{action.action_type} status=#{status}"
+    )
 
-    if !(token && channel_id) do
-      Logger.warning("Slack not configured, skipping notification", %{})
-      {:error, :not_configured}
-    else
-      Logger.info(
-        "[Slack] Preparing REMEDIATION UPDATE: incident_id=#{incident.id} action=#{action.action_type} status=#{status} result=#{action.result_message || action.failure_reason || "pending"}"
-      )
-
-      blocks = build_remediation_blocks(incident, action, status)
-
-      payload = %{
-        channel: channel_id,
-        text: "Remediation Update: #{incident.service_name}",
-        blocks: blocks
-      }
-
-      post_message(token, payload)
-    end
+    {:ok, :suppressed}
   end
 
   @doc """

@@ -248,7 +248,7 @@ defmodule RailwayApp.Analysis.LLMRouter do
 
     Provide your response in JSON format:
     {
-      "intent": "restart|scale|rollback|status|help",
+      "intent": "restart|scale|rollback|status|logs|deployments|help",
       "service": "service_name",
       "parameters": {},
       "confidence": 0.0-1.0

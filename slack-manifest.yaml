@@ -16,19 +16,19 @@ features:
       url: https://REPLACE_WITH_YOUR_APP_URL/api/slack/slash
       description: Manage Railway service incidents
       usage_hint: help
-  interactivity:
-    is_enabled: true
-    # [IMPORTANT] Replace REPLACE_WITH_YOUR_APP_URL with your actual Railway app URL
-    request_url: https://REPLACE_WITH_YOUR_APP_URL/api/slack/interactive
 oauth_config:
   scopes:
     bot:
-      - app_mention:read
+      - app_mentions:read
       - chat:write
       - chat:write.public
       - commands
       - incoming-webhook
 settings:
+  interactivity:
+    is_enabled: true
+    # [IMPORTANT] Replace REPLACE_WITH_YOUR_APP_URL with your actual Railway app URL
+    request_url: https://REPLACE_WITH_YOUR_APP_URL/api/slack/interactive
   event_subscriptions:
     # [IMPORTANT] Replace REPLACE_WITH_YOUR_APP_URL with your actual Railway app URL
     request_url: https://REPLACE_WITH_YOUR_APP_URL/api/slack/events
