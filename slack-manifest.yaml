@@ -1,0 +1,39 @@
+display_information:
+  name: Tessera
+  description: Manage Railway service incidents from Slack
+  background_color: "#1c3775"
+features:
+  app_home:
+    home_tab_enabled: true
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: Tessera
+    always_online: true
+  slash_commands:
+    - command: /tessera
+      # [IMPORTANT] Replace REPLACE_WITH_YOUR_APP_URL with your actual Railway app URL
+      url: https://REPLACE_WITH_YOUR_APP_URL/api/slack/slash
+      description: Manage Railway service incidents
+      usage_hint: help
+  interactivity:
+    is_enabled: true
+    # [IMPORTANT] Replace REPLACE_WITH_YOUR_APP_URL with your actual Railway app URL
+    request_url: https://REPLACE_WITH_YOUR_APP_URL/api/slack/interactive
+oauth_config:
+  scopes:
+    bot:
+      - app_mention:read
+      - chat:write
+      - chat:write.public
+      - commands
+      - incoming-webhook
+settings:
+  event_subscriptions:
+    # [IMPORTANT] Replace REPLACE_WITH_YOUR_APP_URL with your actual Railway app URL
+    request_url: https://REPLACE_WITH_YOUR_APP_URL/api/slack/events
+    bot_events:
+      - app_mention
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

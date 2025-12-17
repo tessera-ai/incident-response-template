@@ -106,6 +106,37 @@ defmodule RailwayApp.Conversations.ConversationManager do
   end
 
   @impl true
+  def handle_info({:thread_message, channel_id, user_id, text, thread_ts, _message_ts}, state) do
+    Logger.info("Processing threaded message from user #{user_id} in channel #{channel_id}")
+
+    # Find existing session by thread reference
+    session_key = "#{channel_id}:#{thread_ts}"
+
+    case Conversations.get_session_by_channel_ref(session_key) do
+      nil ->
+        # No existing session - create a new one (user may have started typing without clicking Start Chat)
+        Logger.info("No existing session found for thread #{thread_ts}, creating new session")
+
+        {:ok, session} =
+          Conversations.create_session(%{
+            channel: "slack",
+            channel_ref: session_key,
+            participant_id: user_id,
+            started_at: DateTime.utc_now()
+          })
+
+        process_user_message(session, text, channel_id, thread_ts, nil)
+
+      session ->
+        # Existing session found - continue the conversation
+        Logger.info("Found existing session #{session.id} for thread")
+        process_user_message(session, text, channel_id, thread_ts, nil)
+    end
+
+    {:noreply, state}
+  end
+
+  @impl true
   def handle_info(msg, state) do
     Logger.debug("Unhandled message in ConversationManager: #{inspect(msg)}")
     {:noreply, state}

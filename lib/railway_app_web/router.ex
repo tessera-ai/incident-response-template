@@ -20,7 +20,6 @@ defmodule RailwayAppWeb.Router do
 
     # Dashboard is the home page
     live "/", DashboardLive, :index
-    live "/dashboard", DashboardLive, :index
 
     # Railway logs LiveView routes
     live "/railway/logs/:project_id/:service_id", RailwayLogsLive, :index
@@ -40,6 +39,7 @@ defmodule RailwayAppWeb.Router do
 
     post "/slack/interactive", SlackWebhookController, :interactive
     post "/slack/slash", SlackWebhookController, :slash
+    post "/slack/events", SlackWebhookController, :events
   end
 
   # Generate swagger JSON

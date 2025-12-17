@@ -87,6 +87,40 @@ defmodule RailwayAppWeb.SlackWebhookController do
     end
   end
 
+  swagger_path :events do
+    post("/api/slack/events")
+    summary("Handle Slack Events API")
+    description("Receives events from Slack Events API, including messages in threads")
+    consumes("application/json")
+    produces("application/json")
+    parameter(:payload, :body, :object, "Slack event payload", required: true)
+    response(200, "Success")
+    response(400, "Bad request", %Schema{type: "object", "$ref": "#/definitions/ErrorResponse"})
+  end
+
+  @doc """
+  Handles Slack Events API callbacks.
+  This includes URL verification challenges and message events.
+  """
+  def events(conn, %{"type" => "url_verification", "challenge" => challenge}) do
+    # Slack URL verification - respond with challenge
+    Logger.info("Slack URL verification received")
+    json(conn, %{challenge: challenge})
+  end
+
+  def events(conn, %{"type" => "event_callback", "event" => event} = _payload) do
+    case verify_slack_signature(conn) do
+      :ok ->
+        handle_event_callback(event)
+        # Slack requires a 200 OK response within 3 seconds
+        send_resp(conn, 200, "")
+    end
+  end
+
+  def events(conn, _params) do
+    send_resp(conn, 200, "")
+  end
+
   # Private Functions
 
   defp verify_slack_signature(_conn) do
@@ -165,6 +199,35 @@ defmodule RailwayAppWeb.SlackWebhookController do
       "conversations:events",
       {:slash_command, command, text, user_id, channel_id, response_url}
     )
+  end
+
+  # Handle app_mention events - only responds when bot is @mentioned
+  defp handle_event_callback(%{"type" => "app_mention"} = event) do
+    channel_id = event["channel"]
+    user_id = event["user"]
+    text = event["text"]
+    thread_ts = event["thread_ts"] || event["ts"]
+    message_ts = event["ts"]
+
+    Logger.info("Bot mentioned by user #{user_id} in channel #{channel_id}")
+
+    # Strip the bot mention from the text to get the actual command/question
+    # Bot mentions look like <@U12345678>
+    clean_text =
+      text
+      |> String.replace(~r/<@[A-Z0-9]+>/, "")
+      |> String.trim()
+
+    # Broadcast to conversation manager
+    Phoenix.PubSub.broadcast(
+      RailwayApp.PubSub,
+      "conversations:events",
+      {:thread_message, channel_id, user_id, clean_text, thread_ts, message_ts}
+    )
+  end
+
+  defp handle_event_callback(event) do
+    Logger.debug("Ignoring unhandled event type: #{event["type"]}")
   end
 
   defp parse_action_value(value) do
