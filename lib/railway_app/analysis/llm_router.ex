@@ -20,7 +20,7 @@ defmodule RailwayApp.Analysis.LLMRouter do
 
     case select_provider() do
       {:ok, provider} ->
-        call_provider(provider, prompt)
+        call_provider(provider, prompt, &parse_analysis_response/1)
 
       {:error, reason} ->
         Logger.error("No LLM provider available: #{reason}")
@@ -36,7 +36,7 @@ defmodule RailwayApp.Analysis.LLMRouter do
 
     case select_provider() do
       {:ok, provider} ->
-        call_provider(provider, prompt)
+        call_provider(provider, prompt, &parse_intent_response/1)
 
       {:error, reason} ->
         Logger.error("No LLM provider available: #{reason}")
@@ -85,7 +85,7 @@ defmodule RailwayApp.Analysis.LLMRouter do
     end
   end
 
-  defp call_provider(:openai, prompt) do
+  defp call_provider(:openai, prompt, parser_fn) do
     config = Application.get_env(:railway_app, :llm, [])
     api_key = config[:openai_api_key]
 
@@ -111,7 +111,7 @@ defmodule RailwayApp.Analysis.LLMRouter do
            max_retries: 2
          ) do
       {:ok, %{status: 200, body: response}} ->
-        extract_openai_response(response)
+        extract_openai_response(response, parser_fn)
 
       {:ok, %{status: status}} ->
         Logger.error("OpenAI API error: status #{status}")
@@ -123,7 +123,7 @@ defmodule RailwayApp.Analysis.LLMRouter do
     end
   end
 
-  defp call_provider(:anthropic, prompt) do
+  defp call_provider(:anthropic, prompt, parser_fn) do
     config = Application.get_env(:railway_app, :llm, [])
     api_key = config[:anthropic_api_key]
 
@@ -147,7 +147,7 @@ defmodule RailwayApp.Analysis.LLMRouter do
            max_retries: 2
          ) do
       {:ok, %{status: 200, body: response}} ->
-        extract_anthropic_response(response)
+        extract_anthropic_response(response, parser_fn)
 
       {:ok, %{status: status}} ->
         Logger.error("Anthropic API error: status #{status}")
@@ -159,17 +159,20 @@ defmodule RailwayApp.Analysis.LLMRouter do
     end
   end
 
-  defp extract_openai_response(%{"choices" => [%{"message" => %{"content" => content}} | _]}) do
-    parse_analysis_response(content)
+  defp extract_openai_response(
+         %{"choices" => [%{"message" => %{"content" => content}} | _]},
+         parser_fn
+       ) do
+    parser_fn.(content)
   end
 
-  defp extract_openai_response(_), do: {:error, :invalid_response}
+  defp extract_openai_response(_, _), do: {:error, :invalid_response}
 
-  defp extract_anthropic_response(%{"content" => [%{"text" => content} | _]}) do
-    parse_analysis_response(content)
+  defp extract_anthropic_response(%{"content" => [%{"text" => content} | _]}, parser_fn) do
+    parser_fn.(content)
   end
 
-  defp extract_anthropic_response(_), do: {:error, :invalid_response}
+  defp extract_anthropic_response(_, _), do: {:error, :invalid_response}
 
   defp parse_analysis_response(content) do
     # Try to extract and parse JSON from the LLM response
@@ -202,6 +205,25 @@ defmodule RailwayApp.Analysis.LLMRouter do
            recommended_action: extract_action(content),
            reasoning: content
          }}
+    end
+  end
+
+  defp parse_intent_response(content) do
+    json_content = extract_json_from_text(content)
+
+    case Jason.decode(json_content) do
+      {:ok, parsed} ->
+        {:ok,
+         %{
+           "intent" => parsed["intent"] || "help",
+           "service" => parsed["service"],
+           "parameters" => parsed["parameters"] || %{},
+           "confidence" => parsed["confidence"] || 0.5
+         }}
+
+      {:error, _} ->
+        # Fallback for intent parsing failure
+        {:error, :parsing_failed}
     end
   end
 
