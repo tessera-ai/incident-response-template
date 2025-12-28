@@ -98,6 +98,8 @@ defmodule RailwayApp.Railway.Client do
     query_string = """
     query GetDeployments($serviceId: String!, $limit: Int!) {
       service(id: $serviceId) {
+        id
+        name
         deployments(first: $limit) {
           edges {
             node {
@@ -115,6 +117,46 @@ defmodule RailwayApp.Railway.Client do
   end
 
   @doc """
+  Fetches recent deployments for a service via the project context.
+  This is a fallback for when the direct service(id: ...) query is unauthorized.
+  """
+  def get_deployments_via_project(project_id, service_id, limit \\ 10) do
+    query_string = """
+    query GetProjectDeployments($projectId: String!, $limit: Int!) {
+      project(id: $projectId) {
+        services {
+          id
+          name
+          deployments(first: $limit) {
+            edges {
+              node {
+                id
+                status
+                createdAt
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+
+    case query(query_string, %{projectId: project_id, limit: limit}) do
+      {:ok, %{"project" => %{"services" => services}}} when is_list(services) ->
+        case Enum.find(services, fn s -> s["id"] == service_id end) do
+          nil -> {:error, :service_not_found}
+          service -> {:ok, %{"service" => service}}
+        end
+
+      {:ok, _} ->
+        {:error, :invalid_response}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
   Fetches service state and configuration information.
   """
   def get_service_state(service_id) do
@@ -122,6 +164,7 @@ defmodule RailwayApp.Railway.Client do
     query GetServiceState($serviceId: String!) {
       service(id: $serviceId) {
         id
+        name
         status
         timestamp
         environmentId

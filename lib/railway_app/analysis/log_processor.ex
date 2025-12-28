@@ -307,11 +307,14 @@ defmodule RailwayApp.Analysis.LogProcessor do
   defp get_or_create_service_config(service_id) do
     case RailwayApp.ServiceConfigs.get_by_service_id(service_id) do
       nil ->
+        # Fetch real service name from Railway API
+        service_name = fetch_service_name(service_id)
+
         # Create default config
         {:ok, config} =
           RailwayApp.ServiceConfigs.create_service_config(%{
             service_id: service_id,
-            service_name: "Service #{service_id}",
+            service_name: service_name,
             auto_remediation_enabled: false,
             confidence_threshold: 0.7
           })
@@ -319,7 +322,31 @@ defmodule RailwayApp.Analysis.LogProcessor do
         config
 
       config ->
-        config
+        # If name is default "Service <id>", try to update it
+        if String.starts_with?(config.service_name, "Service ") and
+             String.length(config.service_name) > 8 do
+          service_name = fetch_service_name(service_id)
+
+          if service_name != config.service_name do
+            {:ok, updated} =
+              RailwayApp.ServiceConfigs.update_service_config(config, %{
+                service_name: service_name
+              })
+
+            updated
+          else
+            config
+          end
+        else
+          config
+        end
+    end
+  end
+
+  defp fetch_service_name(service_id) do
+    case RailwayApp.Railway.Client.get_service_state(service_id) do
+      {:ok, %{"service" => %{"name" => name}}} when is_binary(name) -> name
+      _ -> "Service #{service_id}"
     end
   end
 

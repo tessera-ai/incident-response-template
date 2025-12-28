@@ -489,7 +489,9 @@ defmodule RailwayApp.Conversations.ConversationManager do
   end
 
   defp execute_command(:rollback, service_id, _session) do
-    case Client.get_deployments(service_id, 5) do
+    project_id = Application.get_env(:railway_app, :railway)[:project_id]
+
+    case Client.get_deployments_via_project(project_id, service_id, 5) do
       {:ok, %{"service" => %{"deployments" => %{"edges" => edges}}}} ->
         case find_previous_deployment(edges) do
           nil ->
@@ -570,7 +572,9 @@ defmodule RailwayApp.Conversations.ConversationManager do
   end
 
   defp execute_command({:deployments, limit}, service_id, _session) do
-    case Client.get_deployments(service_id, limit) do
+    project_id = Application.get_env(:railway_app, :railway)[:project_id]
+
+    case Client.get_deployments_via_project(project_id, service_id, limit) do
       {:ok, %{"service" => %{"deployments" => %{"edges" => edges}}}} when is_list(edges) ->
         format_deployments(edges)
 
@@ -601,7 +605,9 @@ defmodule RailwayApp.Conversations.ConversationManager do
       Client.get_latest_deployment_id(project_id, environment_id, service_id)
     else
       # Fallback: get deployments and take the first one
-      case Client.get_deployments(service_id, 1) do
+      project_id = Application.get_env(:railway_app, :railway)[:project_id]
+
+      case Client.get_deployments_via_project(project_id, service_id, 1) do
         {:ok, %{"service" => %{"deployments" => %{"edges" => [%{"node" => %{"id" => id}} | _]}}}} ->
           {:ok, id}
 
