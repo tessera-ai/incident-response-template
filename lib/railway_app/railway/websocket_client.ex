@@ -554,16 +554,11 @@ defmodule RailwayApp.Railway.WebSocketClient do
           }
         end
         |> Enum.reject(fn log_event ->
-          # Filter out logs from the agent itself to prevent infinite loops
-          # We check if the service_id matches the agent's own project/service ID
-          # or if the log message contains specific signatures of the agent's own logging
+          # Filter out logs from the agent itself to prevent infinite loops.
+          # Only match by service_id — message content matching causes false positives.
           agent_service_id = System.get_env("RAILWAY_SERVICE_ID")
 
-          is_agent_log =
-            (agent_service_id && log_event.service_id == agent_service_id) ||
-              String.contains?(log_event.message, "Analyzing") ||
-              String.contains?(log_event.message, "Incident confidence") ||
-              String.contains?(log_event.message, "Created incident")
+          is_agent_log = agent_service_id && log_event.service_id == agent_service_id
 
           if is_agent_log do
             Logger.debug(

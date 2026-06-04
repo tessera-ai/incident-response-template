@@ -745,9 +745,11 @@ defmodule RailwayApp.Railway.Client do
           _ -> {:error, "Unexpected response format"}
         end
 
-      {:ok, %{status: 429}} ->
+      {:ok, %{status: 429, headers: headers}} ->
         if retry_count < @max_retries do
-          backoff = (@base_backoff * :math.pow(2, retry_count)) |> trunc()
+          backoff =
+            parse_retry_after(headers, (@base_backoff * :math.pow(2, retry_count)) |> trunc())
+
           Logger.warning("Rate limited by Railway API, retrying in #{backoff}ms", %{})
           Process.sleep(backoff)
           request(method, url, body, token, retry_count + 1)
@@ -772,4 +774,17 @@ defmodule RailwayApp.Railway.Client do
   end
 
   defp format_graphql_errors(error), do: inspect(error)
+
+  defp parse_retry_after(headers, default_backoff) do
+    case List.keyfind(headers, "retry-after", 0) do
+      {_, value} ->
+        case Float.parse(value) do
+          {seconds, _} -> trunc(seconds * 1000)
+          :error -> default_backoff
+        end
+
+      nil ->
+        default_backoff
+    end
+  end
 end

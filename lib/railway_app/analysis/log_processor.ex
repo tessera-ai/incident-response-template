@@ -73,6 +73,9 @@ defmodule RailwayApp.Analysis.LogProcessor do
             [log_event | logs]
           end)
 
+        # Trigger immediate analysis — don't wait for batch interval
+        send(self(), {:analyze_service, service_id})
+
         %{
           state
           | log_windows: Map.put(state.log_windows, service_id, new_window),
@@ -86,6 +89,33 @@ defmodule RailwayApp.Analysis.LogProcessor do
   end
 
   @impl true
+  def handle_info({:analyze_service, service_id}, state) do
+    new_state =
+      case Map.get(state.pending_analysis, service_id) do
+        nil ->
+          state
+
+        logs ->
+          error_logs =
+            Enum.filter(logs, fn log ->
+              log[:level] in ["error", "fatal", "critical"]
+            end)
+
+          if length(error_logs) > 0 do
+            Logger.info(
+              "Immediate analysis triggered for #{length(error_logs)} critical logs on service #{service_id}"
+            )
+
+            analyze_service_logs(service_id, error_logs, state)
+            %{state | pending_analysis: Map.delete(state.pending_analysis, service_id)}
+          else
+            state
+          end
+      end
+
+    {:noreply, new_state}
+  end
+
   def handle_info({:log_event, log_event}, state) do
     handle_cast({:process_log, log_event}, state)
   end

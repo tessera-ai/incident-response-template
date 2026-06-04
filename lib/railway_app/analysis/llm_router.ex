@@ -227,13 +227,64 @@ defmodule RailwayApp.Analysis.LLMRouter do
     end
   end
 
-  # Extract JSON object from text that may contain surrounding prose
+  # Extract the first JSON object from text, using balanced brace counting
+  # to avoid greedy matching across multiple objects.
   defp extract_json_from_text(text) do
-    # Try to find JSON object pattern in the text
-    case Regex.run(~r/\{[\s\S]*\}/, text) do
-      [json] -> json
-      nil -> text
+    case :binary.match(text, "{") do
+      :nomatch ->
+        text
+
+      {start_pos, _} ->
+        extract_balanced_json(text, start_pos)
     end
+  end
+
+  defp extract_balanced_json(text, start) do
+    text
+    |> :binary.bin_to_list()
+    |> Enum.drop(start)
+    |> extract_brace_content(0, [])
+    |> case do
+      {:ok, chars} -> start..(start + length(chars) - 1) |> then(&String.slice(text, &1))
+      :error -> text
+    end
+  end
+
+  defp extract_brace_content([], _depth, acc) do
+    if depth_matches?(acc) do
+      {:ok, Enum.reverse(acc)}
+    else
+      :error
+    end
+  end
+
+  defp extract_brace_content([?{ | rest], depth, acc) do
+    extract_brace_content(rest, depth + 1, [?{ | acc])
+  end
+
+  defp extract_brace_content([?} | _rest], 1, acc) do
+    {:ok, Enum.reverse([?} | acc])}
+  end
+
+  defp extract_brace_content([?} | rest], depth, acc) when depth > 1 do
+    extract_brace_content(rest, depth - 1, [?} | acc])
+  end
+
+  defp extract_brace_content([char | rest], depth, acc) do
+    extract_brace_content(rest, depth, [char | acc])
+  end
+
+  defp depth_matches?(chars) do
+    depth =
+      Enum.reduce(chars, 0, fn char, acc ->
+        case char do
+          ?{ -> acc + 1
+          ?} -> acc - 1
+          _ -> acc
+        end
+      end)
+
+    depth == 0
   end
 
   defp build_analysis_prompt(logs, service_name) do
