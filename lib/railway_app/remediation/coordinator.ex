@@ -8,7 +8,7 @@ defmodule RailwayApp.Remediation.Coordinator do
 
   alias RailwayApp.Alerts.SlackNotifier
   alias RailwayApp.Railway.Client
-  alias RailwayApp.{Incidents, RemediationActions}
+  alias RailwayApp.{Incidents, RemediationActions, ServiceConfigs}
 
   require Logger
 

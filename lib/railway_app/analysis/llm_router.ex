@@ -240,51 +240,63 @@ defmodule RailwayApp.Analysis.LLMRouter do
   end
 
   defp extract_balanced_json(text, start) do
-    text
-    |> :binary.bin_to_list()
-    |> Enum.drop(start)
-    |> extract_brace_content(0, [])
-    |> case do
-      {:ok, chars} -> start..(start + length(chars) - 1) |> then(&String.slice(text, &1))
-      :error -> text
+    chars = :binary.bin_to_list(text)
+    chars_after_start = Enum.drop(chars, start)
+
+    case extract_brace_content(chars_after_start, 0, false, []) do
+      {:ok, extracted} ->
+        len = length(extracted)
+        String.slice(text, start, len)
+
+      :error ->
+        text
     end
   end
 
-  defp extract_brace_content([], _depth, acc) do
-    if depth_matches?(acc) do
-      {:ok, Enum.reverse(acc)}
-    else
-      :error
-    end
+  # String-aware balanced brace extraction. Tracks whether we're inside a
+  # JSON string literal to avoid counting braces inside quoted values.
+  defp extract_brace_content([], _depth, _in_string, acc) do
+    if balanced?(acc), do: {:ok, Enum.reverse(acc)}, else: :error
   end
 
-  defp extract_brace_content([?{ | rest], depth, acc) do
-    extract_brace_content(rest, depth + 1, [?{ | acc])
+  # Escaped quote inside a string — stay in string mode
+  defp extract_brace_content([?\\, ?" | rest], depth, true, acc) do
+    extract_brace_content(rest, depth, true, [?", ?\\ | acc])
   end
 
-  defp extract_brace_content([?} | _rest], 1, acc) do
+  # Quote toggles string mode
+  defp extract_brace_content([?" | rest], depth, in_string, acc) do
+    extract_brace_content(rest, depth, not in_string, [?" | acc])
+  end
+
+  # Opening brace outside a string increases depth
+  defp extract_brace_content([?{ | rest], depth, false, acc) do
+    extract_brace_content(rest, depth + 1, false, [?{ | acc])
+  end
+
+  # Closing brace at depth 1 (outside string) completes extraction
+  defp extract_brace_content([?} | _rest], 1, false, acc) do
     {:ok, Enum.reverse([?} | acc])}
   end
 
-  defp extract_brace_content([?} | rest], depth, acc) when depth > 1 do
-    extract_brace_content(rest, depth - 1, [?} | acc])
+  # Closing brace at depth > 1 (outside string) decreases depth
+  defp extract_brace_content([?} | rest], depth, false, acc) when depth > 1 do
+    extract_brace_content(rest, depth - 1, false, [?} | acc])
   end
 
-  defp extract_brace_content([char | rest], depth, acc) do
-    extract_brace_content(rest, depth, [char | acc])
+  # Any other character — advance
+  defp extract_brace_content([char | rest], depth, in_string, acc) do
+    extract_brace_content(rest, depth, in_string, [char | acc])
   end
 
-  defp depth_matches?(chars) do
-    depth =
-      Enum.reduce(chars, 0, fn char, acc ->
-        case char do
-          ?{ -> acc + 1
-          ?} -> acc - 1
-          _ -> acc
-        end
-      end)
-
-    depth == 0
+  defp balanced?(chars) do
+    Enum.reduce(chars, 0, fn char, acc ->
+      case char do
+        ?{ -> acc + 1
+        ?} -> acc - 1
+        _ -> acc
+      end
+    end) == 0
   end
 
   defp build_analysis_prompt(logs, service_name) do

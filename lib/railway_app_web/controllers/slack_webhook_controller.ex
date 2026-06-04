@@ -98,8 +98,9 @@ defmodule RailwayAppWeb.SlackWebhookController do
   Handles Slack Events API callbacks.
   This includes URL verification challenges and message events.
   """
+  # URL verification is Slack's initial handshake during app setup.
+  # No signature check — this happens before the signing secret is active.
   def events(conn, %{"type" => "url_verification", "challenge" => challenge}) do
-    # Slack URL verification - respond with challenge
     Logger.info("Slack URL verification received")
     json(conn, %{challenge: challenge})
   end

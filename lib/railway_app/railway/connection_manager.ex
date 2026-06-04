@@ -116,8 +116,8 @@ defmodule RailwayApp.Railway.ConnectionManager do
             # Start health monitoring
             start_health_monitoring(service.service_id)
 
-            # Persist config immediately
-            persist_service_config(state.project_id, service.service_id, service)
+            # Persist config asynchronously — never blocks init
+            Process.send_after(self(), {:retry_persist, service.service_id, service, 1}, 0)
 
             new_conn = Map.put(conn_acc, service.service_id, connection_info)
             new_poll = Map.put(poll_acc, service.service_id, timer_ref)
@@ -312,7 +312,7 @@ defmodule RailwayApp.Railway.ConnectionManager do
     save_with_retry(service_id, config, 3, 1000)
   end
 
-  defp persist_service_config(project_id, service_id, config, attempt \\ 1) do
+  defp persist_service_config(project_id, service_id, config, attempt) do
     case save_service_config(project_id, service_id, config) do
       :ok ->
         Logger.debug("Persisted service config for #{service_id}")
