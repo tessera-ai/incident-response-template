@@ -25,16 +25,13 @@ defmodule RailwayAppWeb.SlackWebhookController do
   def interactive(conn, %{"payload" => payload_json}) do
     case Jason.decode(payload_json) do
       {:ok, payload} ->
-        # Verify Slack signature
         case verify_slack_signature(conn) do
           :ok ->
             handle_interaction(payload)
-            # Slack requires a 200 OK response within 3 seconds
             send_resp(conn, 200, "")
 
-            # This clause is unreachable because verify_slack_signature always returns :ok
-            # {:error, _reason} ->
-            #   send_resp(conn, 401, "Unauthorized")
+          {:error, _reason} ->
+            send_resp(conn, 401, "Unauthorized")
         end
 
       {:error, _} ->
@@ -81,9 +78,8 @@ defmodule RailwayAppWeb.SlackWebhookController do
           text: "Processing your request..."
         })
 
-        # This clause is unreachable because verify_slack_signature always returns :ok
-        # {:error, _reason} ->
-        #   send_resp(conn, 401, "Unauthorized")
+      {:error, _reason} ->
+        send_resp(conn, 401, "Unauthorized")
     end
   end
 
@@ -112,8 +108,10 @@ defmodule RailwayAppWeb.SlackWebhookController do
     case verify_slack_signature(conn) do
       :ok ->
         handle_event_callback(event)
-        # Slack requires a 200 OK response within 3 seconds
         send_resp(conn, 200, "")
+
+      {:error, _reason} ->
+        send_resp(conn, 401, "Unauthorized")
     end
   end
 
@@ -123,18 +121,55 @@ defmodule RailwayAppWeb.SlackWebhookController do
 
   # Private Functions
 
-  defp verify_slack_signature(_conn) do
-    # NOTE: For production, implement proper HMAC-SHA256 signature verification
-    # using the signing secret and the raw request body. Currently just checks
-    # if signing secret is configured.
+  defp verify_slack_signature(conn) do
     config = Application.get_env(:railway_app, :slack, [])
+    signing_secret = config[:signing_secret]
 
-    if config[:signing_secret] do
-      :ok
+    if is_nil(signing_secret) or signing_secret == "" do
+      Logger.warning("Slack signing secret not configured, rejecting request")
+      {:error, :not_configured}
     else
-      Logger.warning("Slack signing secret not configured, skipping verification", %{})
-      :ok
+      raw_body = Map.get(conn.private, :raw_body, "")
+      timestamp = conn |> get_req_header("x-slack-request-timestamp") |> List.first()
+      signature = conn |> get_req_header("x-slack-signature") |> List.first()
+
+      validate_hmac_signature(signing_secret, raw_body, timestamp, signature)
     end
+  end
+
+  defp validate_hmac_signature(signing_secret, raw_body, timestamp, signature) do
+    cond do
+      is_nil(timestamp) or is_nil(signature) ->
+        Logger.warning("Missing Slack signature headers")
+        {:error, :missing_signature}
+
+      timestamp_stale?(timestamp) ->
+        Logger.warning("Slack request timestamp too old, possible replay attack")
+        {:error, :stale_timestamp}
+
+      true ->
+        expected = compute_signature(signing_secret, timestamp, raw_body)
+
+        if Plug.Crypto.secure_compare(expected, signature) do
+          :ok
+        else
+          Logger.warning("Invalid Slack signature, possible forgery attempt")
+          {:error, :invalid_signature}
+        end
+    end
+  end
+
+  defp timestamp_stale?(timestamp) do
+    case Integer.parse(timestamp) do
+      {ts, ""} -> abs(System.system_time(:second) - ts) > 300
+      _ -> true
+    end
+  end
+
+  defp compute_signature(signing_secret, timestamp, body) do
+    basestring = "v0:#{timestamp}:#{body}"
+    hash = :crypto.mac(:hmac, :sha256, signing_secret, basestring)
+    "v0=" <> Base.encode16(hash, case: :lower)
   end
 
   defp handle_interaction(payload) do

@@ -3,6 +3,8 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
 
   alias RailwayApp.{Incident, Repo}
 
+  @signing_secret "test_secret"
+
   setup do
     # Store and restore original configs
     original_slack = Application.get_env(:railway_app, :slack, [])
@@ -10,7 +12,7 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
     original_llm = Application.get_env(:railway_app, :llm, [])
 
     # Set minimal config for testing
-    Application.put_env(:railway_app, :slack, signing_secret: "test_secret")
+    Application.put_env(:railway_app, :slack, signing_secret: @signing_secret)
 
     on_exit(fn ->
       Application.put_env(:railway_app, :slack, original_slack)
@@ -25,11 +27,12 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
     {:ok, incident} =
       %Incident{}
       |> Incident.changeset(%{
-        service_id: "test-service",
-        service_name: "Test Service",
-        environment_id: "test-env",
-        signature: "sig-#{System.unique_integer()}",
-        severity: "critical",
+        service_id: "svc_test",
+        service_name: "test-service",
+        severity: "high",
+        status: "detected",
+        confidence: 0.85,
+        root_cause: "Test incident",
         recommended_action: "restart",
         detected_at: DateTime.utc_now()
       })
@@ -38,18 +41,112 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
     incident
   end
 
+  # Signs a request body using Slack's HMAC-SHA256 scheme.
+  defp sign_slack_request(conn, body) do
+    timestamp = System.system_time(:second) |> Integer.to_string()
+    basestring = "v0:#{timestamp}:#{body}"
+    hash = :crypto.mac(:hmac, :sha256, @signing_secret, basestring)
+    signature = "v0=" <> Base.encode16(hash, case: :lower)
+
+    conn
+    |> Plug.Conn.put_req_header("x-slack-request-timestamp", timestamp)
+    |> Plug.Conn.put_req_header("x-slack-signature", signature)
+  end
+
+  # Posts URL-encoded body with valid Slack signature.
+  defp signed_post(conn, path, params) when is_map(params) do
+    body = URI.encode_query(params)
+
+    conn
+    |> Plug.Conn.put_req_header("content-type", "application/x-www-form-urlencoded")
+    |> sign_slack_request(body)
+    |> post(path, body)
+  end
+
+  # Posts raw body string with valid Slack signature and given content-type.
+  defp signed_post(conn, path, body, content_type) when is_binary(body) do
+    conn
+    |> Plug.Conn.put_req_header("content-type", content_type)
+    |> sign_slack_request(body)
+    |> post(path, body)
+  end
+
+  # =============================================================================
+  # Signature Verification
+  # =============================================================================
+
+  describe "Slack signature verification" do
+    test "rejects request with no signature headers", %{conn: conn} do
+      params = %{"command" => "/tessera", "text" => "help"}
+      body = URI.encode_query(params)
+
+      conn =
+        conn
+        |> Plug.Conn.put_req_header("content-type", "application/x-www-form-urlencoded")
+        |> post("/api/slack/slash", body)
+
+      assert response(conn, 401) =~ "Unauthorized"
+    end
+
+    test "rejects request with wrong signing secret", %{conn: conn} do
+      params = %{"command" => "/tessera", "text" => "help"}
+      body = URI.encode_query(params)
+
+      # Sign with wrong secret
+      timestamp = System.system_time(:second) |> Integer.to_string()
+      hash = :crypto.mac(:hmac, :sha256, "wrong_secret", "v0:#{timestamp}:#{body}")
+      signature = "v0=" <> Base.encode16(hash, case: :lower)
+
+      conn =
+        conn
+        |> Plug.Conn.put_req_header("content-type", "application/x-www-form-urlencoded")
+        |> Plug.Conn.put_req_header("x-slack-request-timestamp", timestamp)
+        |> Plug.Conn.put_req_header("x-slack-signature", signature)
+        |> post("/api/slack/slash", body)
+
+      assert response(conn, 401) =~ "Unauthorized"
+    end
+
+    test "rejects request with stale timestamp", %{conn: conn} do
+      params = %{"command" => "/tessera", "text" => "help"}
+      body = URI.encode_query(params)
+
+      # Use a timestamp 10 minutes old
+      stale_timestamp = (System.system_time(:second) - 600) |> Integer.to_string()
+      hash = :crypto.mac(:hmac, :sha256, @signing_secret, "v0:#{stale_timestamp}:#{body}")
+      signature = "v0=" <> Base.encode16(hash, case: :lower)
+
+      conn =
+        conn
+        |> Plug.Conn.put_req_header("content-type", "application/x-www-form-urlencoded")
+        |> Plug.Conn.put_req_header("x-slack-request-timestamp", stale_timestamp)
+        |> Plug.Conn.put_req_header("x-slack-signature", signature)
+        |> post("/api/slack/slash", body)
+
+      assert response(conn, 401) =~ "Unauthorized"
+    end
+  end
+
   # =============================================================================
   # Interactive Endpoint
   # =============================================================================
 
   describe "POST /api/slack/interactive" do
     test "returns 400 when payload is missing", %{conn: conn} do
-      conn = post(conn, "/api/slack/interactive", %{})
+      body = URI.encode_query(%{})
+
+      conn =
+        signed_post(conn, "/api/slack/interactive", body, "application/x-www-form-urlencoded")
+
       assert response(conn, 400) =~ "Missing payload"
     end
 
     test "returns 400 when payload is invalid JSON", %{conn: conn} do
-      conn = post(conn, "/api/slack/interactive", %{"payload" => "invalid{json"})
+      body = URI.encode_query(%{"payload" => "invalid{json"})
+
+      conn =
+        signed_post(conn, "/api/slack/interactive", body, "application/x-www-form-urlencoded")
+
       assert response(conn, 400) =~ "Invalid payload"
     end
 
@@ -68,7 +165,7 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
           "user" => %{"id" => "U123456"}
         })
 
-      conn = post(conn, "/api/slack/interactive", %{"payload" => payload})
+      conn = signed_post(conn, "/api/slack/interactive", %{"payload" => payload})
       assert response(conn, 200) == ""
     end
 
@@ -87,7 +184,7 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
           "user" => %{"id" => "U123456"}
         })
 
-      conn = post(conn, "/api/slack/interactive", %{"payload" => payload})
+      conn = signed_post(conn, "/api/slack/interactive", %{"payload" => payload})
       assert response(conn, 200) == ""
     end
 
@@ -106,7 +203,7 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
           "user" => %{"id" => "U123456"}
         })
 
-      conn = post(conn, "/api/slack/interactive", %{"payload" => payload})
+      conn = signed_post(conn, "/api/slack/interactive", %{"payload" => payload})
       assert response(conn, 200) == ""
     end
 
@@ -125,7 +222,7 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
           "user" => %{"id" => "U123456"}
         })
 
-      conn = post(conn, "/api/slack/interactive", %{"payload" => payload})
+      conn = signed_post(conn, "/api/slack/interactive", %{"payload" => payload})
       assert response(conn, 200) == ""
     end
 
@@ -144,7 +241,7 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
           "user" => %{"id" => "U123456"}
         })
 
-      conn = post(conn, "/api/slack/interactive", %{"payload" => payload})
+      conn = signed_post(conn, "/api/slack/interactive", %{"payload" => payload})
       assert response(conn, 200) == ""
     end
 
@@ -162,7 +259,7 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
           "message" => %{"ts" => "1234567890.123456"}
         })
 
-      conn = post(conn, "/api/slack/interactive", %{"payload" => payload})
+      conn = signed_post(conn, "/api/slack/interactive", %{"payload" => payload})
       assert response(conn, 200) == ""
     end
 
@@ -173,7 +270,7 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
           "actions" => []
         })
 
-      conn = post(conn, "/api/slack/interactive", %{"payload" => payload})
+      conn = signed_post(conn, "/api/slack/interactive", %{"payload" => payload})
       assert response(conn, 200) == ""
     end
   end
@@ -192,7 +289,7 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
         "response_url" => "https://hooks.slack.com/commands/test"
       }
 
-      conn = post(conn, "/api/slack/slash", params)
+      conn = signed_post(conn, "/api/slack/slash", params)
       assert json_response(conn, 200)["text"] == "Processing your request..."
     end
 
@@ -205,7 +302,7 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
         "response_url" => "https://hooks.slack.com/commands/test"
       }
 
-      conn = post(conn, "/api/slack/slash", params)
+      conn = signed_post(conn, "/api/slack/slash", params)
       assert json_response(conn, 200)["response_type"] == "ephemeral"
     end
 
@@ -218,7 +315,7 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
         "response_url" => "https://hooks.slack.com/commands/test"
       }
 
-      conn = post(conn, "/api/slack/slash", params)
+      conn = signed_post(conn, "/api/slack/slash", params)
       assert json_response(conn, 200)["text"] == "Processing your request..."
     end
 
@@ -231,7 +328,7 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
         "response_url" => "https://hooks.slack.com/commands/test"
       }
 
-      conn = post(conn, "/api/slack/slash", params)
+      conn = signed_post(conn, "/api/slack/slash", params)
       assert json_response(conn, 200)["text"] == "Processing your request..."
     end
 
@@ -244,7 +341,7 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
         "response_url" => "https://hooks.slack.com/commands/test"
       }
 
-      conn = post(conn, "/api/slack/slash", params)
+      conn = signed_post(conn, "/api/slack/slash", params)
       assert json_response(conn, 200)["text"] == "Processing your request..."
     end
 
@@ -257,7 +354,7 @@ defmodule RailwayAppWeb.SlackWebhookControllerTest do
         "response_url" => "https://hooks.slack.com/commands/test"
       }
 
-      conn = post(conn, "/api/slack/slash", params)
+      conn = signed_post(conn, "/api/slack/slash", params)
       assert json_response(conn, 200)["text"] == "Processing your request..."
     end
   end
