@@ -78,7 +78,7 @@ defmodule RailwayApp.Alerts.SlackNotifierTest do
   # =============================================================================
 
   describe "send_remediation_update/3" do
-    test "returns error when Slack not configured" do
+    test "returns suppressed (remediation updates disabled)" do
       Application.put_env(:railway_app, :slack, [])
 
       incident = %Incident{
@@ -94,7 +94,7 @@ defmodule RailwayApp.Alerts.SlackNotifierTest do
       }
 
       result = SlackNotifier.send_remediation_update(incident, action, "succeeded")
-      assert result == {:error, :not_configured}
+      assert result == {:ok, :suppressed}
     end
 
     test "formats remediation success message" do
@@ -345,13 +345,11 @@ defmodule RailwayApp.Alerts.SlackNotifierTest do
       actions_block = Enum.find(blocks, fn block -> block[:type] == "actions" end)
       assert actions_block != nil
       assert is_list(actions_block.elements)
-      assert length(actions_block.elements) == 3
+      assert length(actions_block.elements) == 1
 
       # Verify button action IDs
       action_ids = Enum.map(actions_block.elements, fn el -> el.action_id end)
-      assert "auto_fix" in action_ids
       assert "start_chat" in action_ids
-      assert "ignore" in action_ids
     end
   end
 
