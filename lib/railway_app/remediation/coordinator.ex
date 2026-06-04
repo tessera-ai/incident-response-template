@@ -44,24 +44,11 @@ defmodule RailwayApp.Remediation.Coordinator do
 
   @impl true
   def handle_info({:incident_detected, incident}, state) do
-    # Check if auto-remediation is enabled for this service
-    case ServiceConfigs.get_by_service_id(incident.service_id) do
-      nil ->
-        Logger.warning("No service config found for #{incident.service_id}", %{})
-
-      service_config ->
-        # FORCE DISABLE: Auto-remediation is strictly disabled for safety.
-        # Even if config says true, we ignore it to ensure human confirmation.
-        if service_config.auto_remediation_enabled do
-          Logger.info(
-            "Auto-remediation configured as enabled for incident #{incident.id}, but BLOCKED by safety policy. Manual fix required."
-          )
-        end
-
-        Logger.info(
-          "Auto-remediation disabled or manual fix required for incident #{incident.id}"
-        )
-    end
+    # Auto-remediation requires explicit human confirmation via Slack actions.
+    # Log for visibility; manual fix is triggered through interactive messages.
+    Logger.info(
+      "Incident #{incident.id} detected for service #{incident.service_id} — awaiting manual confirmation"
+    )
 
     {:noreply, state}
   end

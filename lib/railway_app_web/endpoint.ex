@@ -1,6 +1,18 @@
 defmodule RailwayAppWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :railway_app
 
+  # Caches the raw request body for HMAC signature verification.
+  # Only caches when the body fits in a single read (safe for webhook payloads).
+  def read_body_cache(conn, opts) do
+    case Plug.Conn.read_body(conn, opts) do
+      {:ok, body, conn} ->
+        {:ok, body, Plug.Conn.put_private(conn, :raw_body, body)}
+
+      other ->
+        other
+    end
+  end
+
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
@@ -47,13 +59,11 @@ defmodule RailwayAppWeb.Endpoint do
     param_key: "request_logger",
     cookie_key: "request_logger"
 
-  plug Plug.RequestId
-  plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
-
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
-    json_decoder: Phoenix.json_library()
+    json_decoder: Phoenix.json_library(),
+    body_reader: {__MODULE__, :read_body_cache, []}
 
   plug Plug.MethodOverride
   plug Plug.Head
