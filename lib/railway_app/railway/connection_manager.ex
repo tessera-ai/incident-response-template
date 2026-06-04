@@ -99,7 +99,7 @@ defmodule RailwayApp.Railway.ConnectionManager do
       )
     end
 
-    # Start monitoring for all external services (WITHOUT saving to database during startup)
+    # Start monitoring for all external services and persist configs immediately
     {connections, poll_timers, health_timers, new_service_configs} =
       Enum.reduce(monitored_services, {%{}, %{}, %{}, %{}}, fn service,
                                                                {conn_acc, poll_acc, health_acc,
@@ -110,14 +110,17 @@ defmodule RailwayApp.Railway.ConnectionManager do
               "Started monitoring external service: #{service.project_id}/#{service.environment_id}"
             )
 
-            # Start state polling
-            start_state_polling(service.project_id, service.service_id, service)
+            # Start state polling and track timer reference
+            timer_ref = start_state_polling(service.project_id, service.service_id, service)
 
             # Start health monitoring
             start_health_monitoring(service.service_id)
 
+            # Persist config immediately
+            persist_service_config(state.project_id, service.service_id, service)
+
             new_conn = Map.put(conn_acc, service.service_id, connection_info)
-            new_poll = Map.put(poll_acc, service.service_id, :timer)
+            new_poll = Map.put(poll_acc, service.service_id, timer_ref)
             new_health = Map.put(health_acc, service.service_id, :timer)
             new_config = Map.put(config_acc, service.service_id, service)
 
@@ -143,10 +146,6 @@ defmodule RailwayApp.Railway.ConnectionManager do
     # Start health check timer
     schedule_health_check()
 
-    # Schedule database operations to happen after system is stable (5 seconds delay)
-    # This prevents database connection timeouts during startup
-    Process.send_after(self(), :persist_service_configs, 5_000)
-
     {:ok, new_state}
   end
 
@@ -157,8 +156,8 @@ defmodule RailwayApp.Railway.ConnectionManager do
         # Update service config in database
         save_service_config(state.project_id, service_id, config)
 
-        # Start state polling
-        start_state_polling(state.project_id, service_id, config)
+        # Start state polling and track timer reference
+        timer_ref = start_state_polling(state.project_id, service_id, config)
 
         # Start health monitoring
         start_health_monitoring(service_id)
@@ -166,7 +165,8 @@ defmodule RailwayApp.Railway.ConnectionManager do
         new_state = %{
           state
           | connections: Map.put(state.connections, service_id, connection_info),
-            service_configs: Map.put(state.service_configs, service_id, config)
+            service_configs: Map.put(state.service_configs, service_id, config),
+            poll_timers: Map.put(state.poll_timers, service_id, timer_ref)
         }
 
         Logger.info("Started monitoring service #{service_id}")
@@ -187,7 +187,7 @@ defmodule RailwayApp.Railway.ConnectionManager do
     )
 
     # Stop state polling
-    stop_state_polling(service_id)
+    stop_state_polling(service_id, state.poll_timers)
 
     # Stop health monitoring
     stop_health_monitoring(service_id)
@@ -283,29 +283,16 @@ defmodule RailwayApp.Railway.ConnectionManager do
   def handle_info({:service_state_poll, service_id}, state) do
     poll_service_state(state.project_id, service_id, state.service_configs)
 
-    # Schedule next poll
-    schedule_state_poll(service_id, state.service_configs)
+    # Schedule next poll and update tracked timer reference
+    timer_ref = schedule_state_poll(service_id, state.service_configs)
+    new_poll_timers = Map.put(state.poll_timers, service_id, timer_ref)
 
-    {:noreply, state}
+    {:noreply, %{state | poll_timers: new_poll_timers}}
   end
 
   @impl true
-  def handle_info(:persist_service_configs, state) do
-    Logger.info("Persisting service configurations to database after startup delay")
-
-    # Save all service configs to database now that system is stable
-    Enum.each(state.service_configs, fn {service_id, config} ->
-      try do
-        save_service_config(state.project_id, service_id, config)
-        Logger.debug("Persisted service config for #{service_id}")
-      rescue
-        error ->
-          Logger.error("Failed to persist service config for #{service_id}: #{inspect(error)}")
-          # Don't crash the system if database is still not ready - just log and continue
-      end
-    end)
-
-    Logger.info("Service configuration persistence completed")
+  def handle_info({:retry_persist, service_id, config, attempt}, state) do
+    persist_service_config(state.project_id, service_id, config, attempt)
     {:noreply, state}
   end
 
@@ -323,6 +310,27 @@ defmodule RailwayApp.Railway.ConnectionManager do
 
   defp save_service_config(_project_id, service_id, config) do
     save_with_retry(service_id, config, 3, 1000)
+  end
+
+  defp persist_service_config(project_id, service_id, config, attempt \\ 1) do
+    case save_service_config(project_id, service_id, config) do
+      :ok ->
+        Logger.debug("Persisted service config for #{service_id}")
+
+      {:error, reason} when attempt < 3 ->
+        delay = :timer.seconds(attempt * 2)
+
+        Logger.warning(
+          "Failed to persist config for #{service_id} (attempt #{attempt}), retrying in #{delay}ms: #{inspect(reason)}"
+        )
+
+        Process.send_after(self(), {:retry_persist, service_id, config, attempt + 1}, delay)
+
+      {:error, reason} ->
+        Logger.error(
+          "Failed to persist config for #{service_id} after #{attempt} attempts: #{inspect(reason)}"
+        )
+    end
   end
 
   defp save_with_retry(service_id, config, max_attempts, base_delay) do
@@ -482,15 +490,19 @@ defmodule RailwayApp.Railway.ConnectionManager do
   defp start_state_polling(_project_id, service_id, configs) do
     config = Map.get(configs, service_id, %{})
     interval = Map.get(config, :state_poll_interval, @state_poll_interval)
-
-    schedule_state_poll(service_id, configs)
+    timer_ref = schedule_state_poll(service_id, configs)
 
     Logger.debug("Started state polling for service #{service_id} at #{interval}ms intervals")
+    timer_ref
   end
 
-  defp stop_state_polling(service_id) do
-    # This would need to track and cancel the timer
-    # For now, just log
+  defp stop_state_polling(service_id, poll_timers) do
+    case Map.get(poll_timers, service_id) do
+      nil -> :ok
+      ref when is_reference(ref) -> Process.cancel_timer(ref)
+      _ -> :ok
+    end
+
     Logger.debug("Stopped state polling for service #{service_id}")
   end
 
